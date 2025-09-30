@@ -6,39 +6,62 @@ import TaskList from "./components/TaskList";
 function App() {
   const [tasks, setTasks] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    setTasks(taskService.getAll());
-  }, []);
-
-  const handleSave = (task) => {
-    if (editing) {
-      taskService.update(editing.id, task);
-      setEditing(null);
-    } else {
-      taskService.create(task);
+  const loadTasks = async (controller) => {
+    setLoading(true);
+    try {
+      const data = await taskService.getAll({ signal: controller.signal });
+      setTasks(data);
+    } catch (err) {
+      if (err.name !== "AbortError") console.error(err);
+    } finally {
+      setLoading(false);
     }
-    setTasks(taskService.getAll());
   };
 
-  const handleDelete = (id) => {
-    taskService.delete(id);
-    setTasks(taskService.getAll());
+  useEffect(() => {
+    const controller = new AbortController();
+    loadTasks(controller);
+
+    return () => controller.abort();
+  }, []);
+
+  const handleSave = async (task) => {
+    const controller = new AbortController();
+    setLoading(true);
+    try {
+      if (editing) {
+        await taskService.update(editing.id, task, { signal: controller.signal });
+        setEditing(null);
+      } else {
+        await taskService.create(task, { signal: controller.signal });
+      }
+      const updated = await taskService.getAll({ signal: controller.signal });
+      setTasks(updated);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    const controller = new AbortController();
+    setLoading(true);
+    try {
+      await taskService.delete(id, { signal: controller.signal });
+      const updated = await taskService.getAll({ signal: controller.signal });
+      setTasks(updated);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center py-10">
-      <div className="w-full max-w-2xl bg-dracula-bg p-6 rounded-xl shadow-lg border border-dracula-purple">
-        <h1 className="text-3xl font-bold text-dracula-pink mb-6 text-center">
-          Task Dashboard
-        </h1>
-        <TaskForm onSave={handleSave} task={editing} />
-        <TaskList
-          tasks={tasks}
-          onEdit={(t) => setEditing(t)}
-          onDelete={handleDelete}
-        />
-      </div>
+    <div className="p-6 max-w-2xl mx-auto">
+      <h1 className="text-xl font-bold mb-4">Task Manager</h1>
+      <TaskForm onSave={handleSave} task={editing} />
+      {loading ? <p className="text-dracula-yellow">Loading...</p> : null}
+      <TaskList tasks={tasks} onEdit={(t) => setEditing(t)} onDelete={handleDelete} />
     </div>
   );
 }
